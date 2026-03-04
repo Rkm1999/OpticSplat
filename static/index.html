@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpticSplat</title>
+    <script src="tailwind.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "gaussian-splats-3d": "https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.0/build/gaussian-splats-3d.module.js"
+            }
+        }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+            transition: background-color 0.3s ease;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .pointer-events-auto {
+            pointer-events: auto;
+        }
+
+        #loading {
+            display: none;
+        }
+
+        .gallery-item {
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+            position: relative;
+        }
+
+        .gallery-item:hover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .gallery-thumb {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 4px;
+            background: #111;
+        }
+
+        #gallery,
+        #settings-sidebar {
+            pointer-events: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 5;
+        }
+
+        .gallery-item:hover .delete-btn {
+            opacity: 1;
+        }
+
+        .delete-btn:hover {
+            background: rgb(220, 38, 38);
+            transform: scale(1.1);
+        }
+
+        /* Hide number input spinners */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+
+        /* Grid Overlay Styles */
+        #grid-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+        }
+
+        .grid-line {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.3);
+            box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .grid-line-v {
+            width: 1px;
+            height: 100%;
+        }
+
+        .grid-line-h {
+            height: 1px;
+            width: 100%;
+        }
+
+        /* Aspect & Grid Button Visuals */
+        .aspect-btn,
+        .grid-btn,
+        .bg-btn {
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+            cursor: pointer;
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+
+        .aspect-btn {
+            font-size: 10px;
+        }
+
+        .aspect-btn:hover,
+        .grid-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.8);
+            color: #fff;
+        }
+
+        .aspect-btn.active,
+        .grid-btn.active {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: #3b82f6;
+            color: #fff;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+        }
+
+        .aspect-btn-narrow span {
+            display: inline-block;
+            transform: scale(0.85);
+            white-space: nowrap;
+        }
+
+        /* Preset color buttons */
+        .grid-color-btn {
+            transition: all 0.15s ease;
+        }
+
+        .grid-color-btn:hover {
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="canvas-container">
+        <div id="grid-container"></div>
+    </div>
+
+    <!-- Drag and Drop Overlay -->
+    <div id="dropZone"
+        class="fixed inset-0 z-[100] bg-blue-500/20 backdrop-blur-sm border-4 border-blue-500 border-dashed m-6 rounded-3xl flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+        <div
+            class="text-3xl font-bold text-white drop-shadow-xl bg-black/50 px-8 py-4 rounded-2xl flex items-center gap-4">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            Drop .PLY or Image here
+        </div>
+    </div>
+
+    <!-- Gallery Sidebar -->
+    <div id="gallery"
+        class="fixed left-0 top-0 bottom-0 w-48 bg-black/80 backdrop-blur-xl border-r border-white/10 p-4 overflow-y-auto z-20 flex flex-col gap-4">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">History</h2>
+        <div id="historyList" class="flex flex-col gap-4">
+            <!-- Items populated by JS -->
+        </div>
+    </div>
+
+    <!-- Right Settings Sidebar -->
+    <div id="settings-sidebar"
+        class="fixed right-0 top-0 bottom-0 w-[360px] bg-black/80 backdrop-blur-xl border-l border-white/10 p-6 overflow-y-auto z-20 flex flex-col gap-6 pointer-events-auto text-sm">
+
+        <!-- Lens Control -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-center text-sm">
+                <label>Focal Length</label>
+                <div class="flex items-center gap-1 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+                    <input type="number" id="focalInput" value="35" step="1"
+                        class="bg-transparent w-8 text-right outline-none text-xs">
+                    <span class="text-[10px] text-white/40">mm</span>
+                </div>
+            </div>
+            <input type="range" id="focalRange" min="8" max="400" value="35" class="w-full accent-blue-500">
+
+            <!-- Sharpness/Alpha Slider -->
+            <div class="space-y-1">
+                <label class="text-[10px] text-white/40 uppercase">Sharpness (Alpha Threshold)</label>
+                <div class="flex items-center gap-2">
+                    <input type="range" id="alphaRange" min="1" max="50" step="1" value="20"
+                        class="flex-grow accent-blue-500">
+                    <input type="number" id="alphaInput" value="20"
+                        class="w-10 bg-white/10 border border-white/10 rounded px-1 text-xs outline-none text-right">
+                </div>
+            </div>
+
+            <!-- Aspect Boxes -->
+            <div class="space-y-2 pt-2">
+                <label class="text-[10px] text-white/40 uppercase">Aspect Ratio</label>
+                <div class="flex flex-wrap gap-2 items-end">
+                    <button data-aspect="auto" class="aspect-btn active"
+                        style="width: 36px; height: 36px; border-style: dashed;" title="Original">ORG</button>
+                    <!-- Landscape -->
+                    <button data-aspect="1.777" class="aspect-btn" style="width: 36px; height: 20px;"
+                        title="16:9">16:9</button>
+                    <button data-aspect="1.5" class="aspect-btn" style="width: 36px; height: 24px;"
+                        title="3:2">3:2</button>
+                    <button data-aspect="1.333" class="aspect-btn" style="width: 36px; height: 27px;"
+                        title="4:3">4:3</button>
+                    <button data-aspect="1.25" class="aspect-btn" style="width: 36px; height: 29px;"
+                        title="5:4">5:4</button>
+                    <!-- Square -->
+                    <button data-aspect="1" class="aspect-btn" style="width: 32px; height: 32px;"
+                        title="1:1">1:1</button>
+                    <!-- Portrait -->
+                    <button data-aspect="0.8" class="aspect-btn aspect-btn-narrow" style="width: 29px; height: 36px;"
+                        title="4:5"><span>4:5</span></button>
+                    <button data-aspect="0.75" class="aspect-btn aspect-btn-narrow" style="width: 27px; height: 36px;"
+                        title="3:4"><span>3:4</span></button>
+                    <button data-aspect="0.666" class="aspect-btn aspect-btn-narrow" style="width: 24px; height: 36px;"
+                        title="2:3"><span>2:3</span></button>
+                    <button data-aspect="0.562" class="aspect-btn aspect-btn-narrow" style="width: 20px; height: 36px;"
+                        title="9:16"><span>9:16</span></button>
+                </div>
+                <input type="hidden" id="aspectSelect" value="auto">
+            </div>
+
+            <!-- Grid overlay buttons -->
+            <div class="space-y-2 pt-2">
+                <div class="flex justify-between items-center">
+                    <label class="text-[10px] text-white/40 uppercase">Grid Overlay</label>
+                    <div class="flex items-center gap-1.5" id="gridColorGroup">
+                        <button
+                            class="grid-color-btn ring-2 ring-blue-500 ring-offset-1 ring-offset-black w-3.5 h-3.5 rounded-full border border-white/20"
+                            data-color="#ffffff" style="background-color: #ffffff;" title="White"></button>
+                        <button class="grid-color-btn w-3.5 h-3.5 rounded-full border border-white/20"
+                            data-color="#000000" style="background-color: #000000;" title="Black"></button>
+                        <button class="grid-color-btn w-3.5 h-3.5 rounded-full border border-white/20"
+                            data-color="#ef4444" style="background-color: #ef4444;" title="Red"></button>
+                        <button class="grid-color-btn w-3.5 h-3.5 rounded-full border border-white/20"
+                            data-color="#3b82f6" style="background-color: #3b82f6;" title="Blue"></button>
+                        <button class="grid-color-btn w-3.5 h-3.5 rounded-full border border-white/20"
+                            data-color="#eab308" style="background-color: #eab308;" title="Yellow"></button>
+                        <button class="grid-color-btn w-3.5 h-3.5 rounded-full border border-white/20"
+                            data-color="#22c55e" style="background-color: #22c55e;" title="Green"></button>
+                    </div>
+                    <input type="hidden" id="gridColor" value="#ffffff">
+                </div>
+                <div class="flex flex-wrap gap-2 items-center">
+                    <button data-grid="none" class="grid-btn active" style="width: 36px; height: 36px;" title="None">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="3" y1="3" x2="21" y2="21"></line>
+                        </svg>
+                    </button>
+                    <button data-grid="thirds" class="grid-btn" style="width: 36px; height: 36px;"
+                        title="Rule of Thirds">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="3" x2="9" y2="21"></line>
+                            <line x1="15" y1="3" x2="15" y2="21"></line>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="3" y1="15" x2="21" y2="15"></line>
+                        </svg>
+                    </button>
+                    <button data-grid="center" class="grid-btn" style="width: 36px; height: 36px;"
+                        title="Center Crosshair">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="12" y1="3" x2="12" y2="21"></line>
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                        </svg>
+                    </button>
+                    <button data-grid="square" class="grid-btn" style="width: 36px; height: 36px;" title="Square Guide">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <rect x="8" y="8" width="8" height="8"></rect>
+                        </svg>
+                    </button>
+                    <button data-grid="diagonal" class="grid-btn" style="width: 36px; height: 36px;" title="Diagonals">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="3" y1="3" x2="21" y2="21"></line>
+                            <line x1="21" y1="3" x2="3" y2="21"></line>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Environment -->
+        <div class="space-y-4 border-t border-white/10 pt-6">
+            <div class="flex justify-between items-center text-sm">
+                <label>Environment</label>
+            </div>
+
+            <div class="space-y-2 pt-1">
+                <label class="text-[10px] text-white/40 uppercase">Background Setup</label>
+                <div class="flex gap-2 items-center" id="bgColorGroup">
+                    <button
+                        class="bg-btn ring-2 ring-blue-500 ring-offset-1 ring-offset-black w-6 h-6 rounded-full border border-white/20 relative"
+                        data-bg="#000000" style="background-color: #000000;" title="Black"></button>
+                    <button class="bg-btn w-6 h-6 rounded-full border border-white/20 relative" data-bg="#ffffff"
+                        style="background-color: #ffffff;" title="White"></button>
+                    <button class="bg-btn w-6 h-6 rounded-full border border-white/20 relative" data-bg="#00ff00"
+                        style="background-color: #00ff00;" title="Green Screen"></button>
+                    <button class="bg-btn w-6 h-6 rounded-full border border-white/20 relative overflow-hidden"
+                        data-bg="transparent" title="Transparent Background">
+                        <div
+                            class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYV2NkYGAwYkAD////R2XQIAxGE4lYAgA/3x0xQ+1tOAAAAABJRU5ErkJggg==')]">
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Angle Control -->
+        <div class="space-y-4 border-t border-white/10 pt-6">
+            <div class="flex justify-between text-sm items-center">
+                <div class="flex items-center gap-3">
+                    <label>Orientation</label>
+                </div>
+                <button id="resetButton"
+                    class="bg-white/10 hover:bg-white/20 px-3 py-0.5 rounded text-[10px] uppercase font-bold transition border border-white/10">
+                    Reset View
+                </button>
+            </div>
+
+            <div class="text-xs text-white/40 font-mono flex justify-between">
+                <span>Angles</span>
+                <span id="angleValue">0° / 0° / 0°</span>
+            </div>
+
+            <div class="flex gap-4">
+                <div class="flex-1 space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-white/40 uppercase">Pan</span>
+                        <input type="number" id="panInput" value="0" step="0.1"
+                            class="bg-white/5 border border-white/10 rounded w-10 text-right outline-none text-[10px] px-1">
+                    </div>
+                    <input type="range" id="panRange" min="-45" max="45" step="0.1" value="0"
+                        class="w-full accent-blue-500">
+                </div>
+                <div class="flex-1 space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-white/40 uppercase">Tilt</span>
+                        <input type="number" id="tiltInput" value="0" step="0.1"
+                            class="bg-white/5 border border-white/10 rounded w-10 text-right outline-none text-[10px] px-1">
+                    </div>
+                    <input type="range" id="tiltRange" min="-45" max="45" step="0.1" value="0"
+                        class="w-full accent-blue-500">
+                </div>
+                <div class="flex-1 space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-white/40 uppercase">Roll</span>
+                        <input type="number" id="rollInput" value="0" step="0.1"
+                            class="bg-white/5 border border-white/10 rounded w-10 text-right outline-none text-[10px] px-1">
+                    </div>
+                    <input type="range" id="rollRange" min="-45" max="45" step="0.1" value="0"
+                        class="w-full accent-blue-500">
+                </div>
+            </div>
+
+            <div class="text-xs text-white/40 font-mono flex justify-between mt-4">
+                <span>Shift & Dist</span>
+                <span id="shiftValue">0, 0 | 0.0m</span>
+            </div>
+
+            <div class="flex gap-4">
+                <div class="flex-1 space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-white/40 uppercase">Shift X</span>
+                        <input type="number" id="shiftXInput" value="0" step="0.1"
+                            class="bg-white/5 border border-white/10 rounded w-12 text-right outline-none text-[10px] px-1">
+                    </div>
+                    <input type="range" id="shiftXRange" min="-50" max="50" step="0.01" value="0"
+                        class="w-full accent-blue-500">
+                </div>
+                <div class="flex-1 space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-white/40 uppercase">Shift Y</span>
+                        <input type="number" id="shiftYInput" value="0" step="0.1"
+                            class="bg-white/5 border border-white/10 rounded w-12 text-right outline-none text-[10px] px-1">
+                    </div>
+                    <input type="range" id="shiftYRange" min="-50" max="50" step="0.01" value="0"
+                        class="w-full accent-blue-500">
+                </div>
+                <div class="flex-1 space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-white/40 uppercase">Distance</span>
+                        <input type="number" id="distInput" value="0" step="0.1"
+                            class="bg-white/5 border border-white/10 rounded w-12 text-right outline-none text-[10px] px-1">
+                    </div>
+                    <input type="range" id="distRange" min="-10" max="100" step="0.1" value="0"
+                        class="w-full accent-blue-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Scene Info -->
+        <div class="flex justify-between items-center border-t border-white/10 pt-6">
+            <div>
+                <div class="text-xs text-white/40 uppercase tracking-widest">Resolution</div>
+                <div id="resValue" class="text-sm font-mono truncate">---</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Overlay (Export / Upload) -->
+    <div
+        class="fixed top-0 left-0 w-full pointer-events-none z-10 p-6 pl-[216px] pr-[384px] flex justify-between items-start">
+        <div class="bg-black/50 backdrop-blur-md p-4 rounded-xl border border-white/10 pointer-events-auto shadow-2xl">
+            <h1 class="text-xl font-bold">OpticSplat</h1>
+            <p class="text-xs text-white/60">Single-Image 3DGS Lens simulator</p>
+        </div>
+
+        <div
+            class="flex items-center gap-3 bg-black/50 backdrop-blur-md p-3 rounded-xl border border-white/10 pointer-events-auto shadow-2xl">
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-white/40 uppercase tracking-tighter">Export</label>
+                <button onclick="exportView()"
+                    class="bg-emerald-600 hover:bg-emerald-500 px-4 py-1.5 rounded-lg font-medium transition shadow-lg shadow-emerald-500/20 text-sm whitespace-nowrap">
+                    Capture View
+                </button>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-white/40 uppercase tracking-tighter">Scene Name</label>
+                <input type="text" id="customName" placeholder="Untitled Scene"
+                    class="bg-white/10 border border-white/10 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-500 transition w-48">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-white/40 uppercase tracking-tighter">&nbsp;</label>
+                <input type="file" id="fileInput" class="hidden" accept=".ply,image/*">
+                <button onclick="document.getElementById('fileInput').click()"
+                    class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-medium transition shadow-lg shadow-blue-500/20 text-sm whitespace-nowrap">
+                    Upload & Process
+                </button>
+            </div>
+            <div id="loading" class="text-center text-sm animate-pulse text-blue-400 self-end mb-2 ml-2">
+                AI Processing...
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import * as GaussianSplats3D from 'gaussian-splats-3d';
+
+        let viewer;
+        let camera;
+        let originalAspectRatio = 1;
+        let currentMetadata = null;
+        let isUpdatingFromSliders = false;
+
+        // Helper for grid colors with opacity
+        function hexToRgba(hex, alpha) {
+            if (hex === 'transparent') return 'transparent';
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        async function init() {
+            loadHistory();
+
+            viewer = new GaussianSplats3D.Viewer({
+                'cameraUp': [0, -1, 0],
+                'initialCameraPosition': [0, 0, 0],
+                'initialCameraLookAt': [0, 0, 0],
+                'rootElement': document.getElementById('canvas-container'),
+                'sphericalHarmonicsDegree': 2,
+                'selfRenderMode': true,
+                'rendererConfig': { preserveDrawingBuffer: true, alpha: true }
+            });
+
+            viewer.init();
+            viewer.start();
+
+            // Wait until components are truly ready
+            const checkReady = setInterval(() => {
+                if (viewer.renderer && viewer.camera && viewer.controls) {
+                    clearInterval(checkReady);
+                    console.log('Viewer ready.');
+
+                    camera = viewer.camera;
+                    // Ensure renderer handles transparent background correctly right at start
+                    viewer.renderer.setClearColor(0x000000, 1);
+
+                    viewer.controls.addEventListener('change', () => {
+                        if (!isUpdatingFromSliders) {
+                            syncSlidersFromCamera();
+                        }
+                    });
+
+                    updateCamera();
+                }
+            }, 50);
+
+            window.addEventListener('keydown', (e) => {
+                e.stopImmediatePropagation();
+            }, true);
+
+            setupDragAndDrop();
+        }
+
+        // Live Sharpness/Alpha Threshold updates
+        ['alphaRange', 'alphaInput'].forEach(id => {
+            document.getElementById(id).addEventListener('input', (e) => {
+                let val = parseInt(e.target.value);
+                document.getElementById('alphaRange').value = val;
+                document.getElementById('alphaInput').value = val;
+
+                if (viewer && viewer.splatMesh && viewer.splatMesh.material) {
+                    if (viewer.splatMesh.material.uniforms && viewer.splatMesh.material.uniforms.alphaRemovalThreshold) {
+                        viewer.splatMesh.material.uniforms.alphaRemovalThreshold.value = val;
+                    }
+                }
+            });
+        });
+
+        async function loadHistory() {
+            try {
+                const response = await fetch('/history');
+                const files = await response.json();
+                const list = document.getElementById('historyList');
+                list.innerHTML = '';
+
+                files.forEach(file => {
+                    const item = document.createElement('div');
+                    item.className = 'gallery-item group flex flex-col gap-1';
+                    item.onclick = () => loadScene(file.ply_url, file.metadata);
+
+                    const thumb = document.createElement('img');
+                    thumb.className = 'gallery-thumb border border-white/10 group-hover:border-blue-500 transition';
+                    thumb.src = file.metadata && file.metadata.input_url ? file.metadata.input_url : 'https://via.placeholder.com/150?text=3DGS';
+
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'delete-btn';
+                    deleteBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                        </svg>
+                    `;
+                    deleteBtn.title = 'Delete generation';
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteScene(file.id);
+                    };
+
+                    const name = document.createElement('div');
+                    name.className = 'text-[10px] text-white/40 truncate mt-1 group-hover:text-white/80 transition';
+                    name.innerText = file.metadata && file.metadata.filename ? file.metadata.filename : file.id.substring(0, 8);
+
+                    item.appendChild(thumb);
+                    item.appendChild(deleteBtn);
+                    item.appendChild(name);
+                    list.appendChild(item);
+                });
+            } catch (err) {
+                console.error('History load failed', err);
+            }
+        }
+
+        async function deleteScene(id) {
+            if (!confirm('Permanently delete this generation?')) return;
+            try {
+                const response = await fetch(`/delete/${id}`, { method: 'DELETE' });
+                if (response.ok) loadHistory();
+            } catch (err) {
+                console.error('Delete failed', err);
+            }
+        }
+
+        function loadScene(url, metadata) {
+            console.log('Loading splat:', url, metadata);
+            document.getElementById('loading').style.display = 'block';
+            currentMetadata = metadata;
+            if (metadata) {
+                if (metadata.width && metadata.height) {
+                    originalAspectRatio = metadata.width / metadata.height;
+                } else if (metadata.aspect_ratio) {
+                    originalAspectRatio = metadata.aspect_ratio;
+                } else {
+                    originalAspectRatio = 1.0;
+                }
+
+                document.getElementById('resValue').innerText = metadata.width ? `${metadata.width}x${metadata.height}` : '---';
+                resetView();
+            }
+
+            const currentAlpha = parseInt(document.getElementById('alphaRange').value) || 20;
+
+            viewer.addSplatScene(url, {
+                'splatAlphaRemovalThreshold': currentAlpha,
+                'showLoadingUI': true
+            }).then(() => {
+                document.getElementById('loading').style.display = 'none';
+            });
+        }
+
+        function resetView() {
+            if (currentMetadata) {
+                const focal = Math.round(currentMetadata.focal_length_35mm || 35);
+                document.getElementById('focalRange').value = focal;
+                document.getElementById('focalInput').value = focal;
+            } else {
+                document.getElementById('focalRange').value = 35;
+                document.getElementById('focalInput').value = 35;
+            }
+
+            ['pan', 'tilt', 'roll', 'shiftX', 'shiftY'].forEach(id => {
+                document.getElementById(id + 'Range').value = 0;
+                document.getElementById(id + 'Input').value = 0;
+            });
+
+            document.getElementById('distRange').value = 0;
+            document.getElementById('distInput').value = 0;
+
+            // Auto-highlight matching aspect ratio button based on metadata
+            let matched = false;
+            const tolerance = 0.05;
+            document.querySelectorAll('.aspect-btn').forEach(b => {
+                if (b.dataset.aspect === 'auto') return;
+                const btnAspect = parseFloat(b.dataset.aspect);
+                if (Math.abs(btnAspect - originalAspectRatio) < tolerance) {
+                    matched = b.dataset.aspect;
+                }
+            });
+
+            const aspectSelect = document.getElementById('aspectSelect');
+            if (matched) {
+                aspectSelect.value = matched;
+            } else {
+                aspectSelect.value = 'auto';
+            }
+
+            document.querySelectorAll('.aspect-btn').forEach(b => {
+                if (b.dataset.aspect === aspectSelect.value) {
+                    b.classList.add('active');
+                } else {
+                    b.classList.remove('active');
+                }
+            });
+
+            updateCamera();
+        }
+
+        document.getElementById('resetButton').addEventListener('click', resetView);
+
+        function syncSlidersFromCamera() {
+            if (!viewer || !viewer.controls) return;
+            const controls = viewer.controls;
+            const cam = viewer.camera;
+
+            const viewDir = new THREE.Vector3().subVectors(controls.target, cam.position).normalize();
+
+            let distToZeroPlane = 0;
+            if (Math.abs(viewDir.z) > 0.0001) {
+                distToZeroPlane = -cam.position.z / viewDir.z;
+            } else {
+                distToZeroPlane = cam.position.distanceTo(controls.target);
+            }
+
+            document.getElementById('distRange').value = distToZeroPlane.toFixed(2);
+            document.getElementById('distInput').value = distToZeroPlane.toFixed(2);
+
+            const shiftX = cam.position.x + distToZeroPlane * viewDir.x;
+            const shiftY = cam.position.y + distToZeroPlane * viewDir.y;
+            document.getElementById('shiftXRange').value = shiftX.toFixed(2);
+            document.getElementById('shiftXInput').value = shiftX.toFixed(2);
+            document.getElementById('shiftYRange').value = (-shiftY).toFixed(2);
+            document.getElementById('shiftYInput').value = (-shiftY).toFixed(2);
+
+            const relPos = viewDir.clone().multiplyScalar(-1);
+            const spherical = new THREE.Spherical().setFromVector3(relPos);
+
+            let panDeg = (spherical.theta * 180 / Math.PI) - 180;
+            while (panDeg <= -180) panDeg += 360;
+            while (panDeg > 180) panDeg -= 360;
+
+            const tiltDeg = (90 - spherical.phi * 180 / Math.PI).toFixed(1);
+
+            document.getElementById('panRange').value = panDeg.toFixed(1);
+            document.getElementById('panInput').value = panDeg.toFixed(1);
+            document.getElementById('tiltRange').value = tiltDeg;
+            document.getElementById('tiltInput').value = tiltDeg;
+
+            document.getElementById('angleValue').innerText = `${panDeg.toFixed(1)}° / ${tiltDeg}° / ${parseFloat(document.getElementById('rollRange').value).toFixed(1)}°`;
+            document.getElementById('shiftValue').innerText = `${shiftX.toFixed(1)}, ${shiftY.toFixed(1)} | ${distToZeroPlane.toFixed(1)}m`;
+        }
+
+        function updateCamera(e) {
+            if (e && e.target) {
+                const targetId = e.target.id;
+                if (targetId.endsWith('Range')) {
+                    const baseId = targetId.replace('Range', '');
+                    const inputEl = document.getElementById(baseId + 'Input');
+                    if (inputEl) inputEl.value = e.target.value;
+                } else if (targetId.endsWith('Input')) {
+                    const baseId = targetId.replace('Input', '');
+                    const rangeEl = document.getElementById(baseId + 'Range');
+                    if (rangeEl) rangeEl.value = e.target.value;
+                }
+            }
+
+            if (!viewer || !viewer.camera || !viewer.controls) return;
+
+            isUpdatingFromSliders = true;
+
+            const activeCamera = viewer.camera;
+            const controls = viewer.controls;
+
+            activeCamera.near = 0.001;
+
+            const aspect = document.getElementById('aspectSelect').value;
+            const targetAspect = aspect === 'auto' ? originalAspectRatio : parseFloat(aspect);
+            const mm = document.getElementById('focalRange').value;
+
+            // Emulate a physical 35mm full-frame camera (36mm x 24mm sensor).
+            // This allows rotating the camera and revealing unrendered space if the target aspect
+            // falls outside the original image's bounds.
+            let sensorWidth = 36;
+            let sensorHeight = 24;
+
+            if (targetAspect >= 1.0) {
+                // Landscape orientation (Base: 36x24)
+                if (targetAspect > 1.5) { // 36/24 = 1.5
+                    // Wider than 3:2 (e.g., 16:9), crop top/bottom
+                    sensorWidth = 36;
+                    sensorHeight = 36 / targetAspect;
+                } else {
+                    // Taller than 3:2 (e.g., 4:3), crop sides
+                    sensorHeight = 24;
+                    sensorWidth = 24 * targetAspect;
+                }
+            } else {
+                // Portrait orientation (Base: 24x36) - Camera is physically rotated 90 degrees
+                const portraitAspect = 24 / 36; // ~0.666
+                if (targetAspect < portraitAspect) {
+                    // Taller/narrower than 2:3 (e.g., 9:16), crop sides
+                    sensorHeight = 36;
+                    sensorWidth = 36 * targetAspect;
+                } else {
+                    // Wider/shorter than 2:3 (e.g., 4:5), crop top/bottom
+                    sensorWidth = 24;
+                    sensorHeight = 24 / targetAspect;
+                }
+            }
+
+            const fov = 2 * Math.atan(sensorHeight / (2 * mm)) * (180 / Math.PI);
+            activeCamera.fov = fov;
+
+            const pan = (parseFloat(document.getElementById('panRange').value) + 180) * (Math.PI / 180);
+            const tilt = (90 - parseFloat(document.getElementById('tiltRange').value)) * (Math.PI / 180);
+            const roll = parseFloat(document.getElementById('rollRange').value) * (Math.PI / 180);
+            const shiftX = parseFloat(document.getElementById('shiftXRange').value);
+            const shiftY = -parseFloat(document.getElementById('shiftYRange').value);
+            const dist = parseFloat(document.getElementById('distRange').value);
+
+            const direction = new THREE.Vector3().setFromSphericalCoords(1, tilt, pan);
+            const virtualCenter = new THREE.Vector3(shiftX, shiftY, 0);
+            activeCamera.position.copy(virtualCenter).addScaledVector(direction, dist);
+
+            const orbitRadius = Math.max(0.01, dist);
+            controls.target.copy(activeCamera.position).addScaledVector(direction, -orbitRadius);
+
+            const baseUp = new THREE.Vector3(0, -1, 0);
+            activeCamera.up.copy(baseUp);
+            activeCamera.lookAt(controls.target);
+
+            const viewDir = new THREE.Vector3().subVectors(controls.target, activeCamera.position).normalize();
+            const rollQuat = new THREE.Quaternion().setFromAxisAngle(viewDir, roll);
+            activeCamera.up.applyQuaternion(rollQuat);
+            activeCamera.lookAt(controls.target);
+
+            controls.update();
+
+            const panDisp = parseFloat(document.getElementById('panRange').value).toFixed(1);
+            const tiltDisp = parseFloat(document.getElementById('tiltRange').value).toFixed(1);
+            const rollDisp = parseFloat(document.getElementById('rollRange').value).toFixed(1);
+
+            document.getElementById('angleValue').innerText = `${panDisp}° / ${tiltDisp}° / ${rollDisp}°`;
+            document.getElementById('shiftValue').innerText = `${shiftX.toFixed(1)}, ${shiftY.toFixed(1)} | ${dist.toFixed(1)}m`;
+
+            activeCamera.updateProjectionMatrix();
+
+            const container = document.getElementById('canvas-container');
+
+            const topMargin = 100;
+            const bottomMargin = 24;
+            const leftMargin = 216; // 192px (gallery sidebar) + 24px padding
+            const rightMargin = 384; // 360px (settings sidebar) + 24px padding
+
+            const safeW = Math.max(200, window.innerWidth - leftMargin - rightMargin);
+            const safeH = Math.max(200, window.innerHeight - topMargin - bottomMargin);
+            const safeAspect = safeW / safeH;
+
+            // Decouple DOM scaling from internal FOV millimeter math so viewport maximizes to fill the screen
+            let finalW, finalH;
+            if (targetAspect > safeAspect) {
+                // Bounds constrained by safe width
+                finalW = safeW;
+                finalH = safeW / targetAspect;
+            } else {
+                // Bounds constrained by safe height
+                finalH = safeH;
+                finalW = safeH * targetAspect;
+            }
+
+            container.style.width = finalW + 'px';
+            container.style.height = finalH + 'px';
+            container.style.left = (leftMargin + (safeW / 2)) + 'px';
+            container.style.top = (topMargin + (safeH / 2)) + 'px';
+            container.style.transform = 'translate(-50%, -50%)';
+
+            if (viewer.resize) viewer.resize();
+            updateGrid();
+            isUpdatingFromSliders = false;
+        }
+
+        function updateGrid() {
+            const container = document.getElementById('grid-container');
+            container.innerHTML = '';
+
+            const activeButtons = Array.from(document.querySelectorAll('.grid-btn.active')).map(b => b.dataset.grid);
+
+            if (activeButtons.includes('none') || activeButtons.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+
+            container.style.display = 'block';
+
+            const colorHex = document.getElementById('gridColor').value;
+            const bgColor = hexToRgba(colorHex, 0.4);
+            const borderColor = hexToRgba(colorHex, 0.5);
+
+            if (activeButtons.includes('thirds')) {
+                for (let i = 1; i <= 2; i++) {
+                    const line = document.createElement('div');
+                    line.className = 'grid-line grid-line-v';
+                    line.style.left = (i * 33.33) + '%';
+                    line.style.backgroundColor = bgColor;
+                    container.appendChild(line);
+                }
+                for (let i = 1; i <= 2; i++) {
+                    const line = document.createElement('div');
+                    line.className = 'grid-line grid-line-h';
+                    line.style.top = (i * 33.33) + '%';
+                    line.style.backgroundColor = bgColor;
+                    container.appendChild(line);
+                }
+            }
+
+            if (activeButtons.includes('center')) {
+                const vLine = document.createElement('div');
+                vLine.className = 'grid-line grid-line-v';
+                vLine.style.left = '50%';
+                vLine.style.backgroundColor = bgColor;
+                container.appendChild(vLine);
+
+                const hLine = document.createElement('div');
+                hLine.className = 'grid-line grid-line-h';
+                hLine.style.top = '50%';
+                hLine.style.backgroundColor = bgColor;
+                container.appendChild(hLine);
+            }
+
+            if (activeButtons.includes('square')) {
+                const w = container.clientWidth;
+                const h = container.clientHeight;
+                const size = Math.min(w, h);
+
+                const box = document.createElement('div');
+                box.style.position = 'absolute';
+                box.style.border = `1px solid ${borderColor}`;
+                box.style.boxShadow = `0 0 2px rgba(0, 0, 0, 0.5)`;
+                box.style.left = '50%';
+                box.style.top = '50%';
+                box.style.width = size + 'px';
+                box.style.height = size + 'px';
+                box.style.transform = 'translate(-50%, -50%)';
+                container.appendChild(box);
+            }
+
+            if (activeButtons.includes('diagonal')) {
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.style.position = 'absolute';
+                svg.style.top = '0';
+                svg.style.left = '0';
+                svg.style.width = '100%';
+                svg.style.height = '100%';
+                svg.style.pointerEvents = 'none';
+                svg.style.filter = 'drop-shadow(0 0 2px rgba(0, 0, 0, 0.5))';
+
+                const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line1.setAttribute('x1', '0');
+                line1.setAttribute('y1', '0');
+                line1.setAttribute('x2', '100%');
+                line1.setAttribute('y2', '100%');
+                line1.setAttribute('stroke', bgColor);
+                line1.setAttribute('stroke-width', '1');
+
+                const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line2.setAttribute('x1', '100%');
+                line2.setAttribute('y1', '0');
+                line2.setAttribute('x2', '0');
+                line2.setAttribute('y2', '100%');
+                line2.setAttribute('stroke', bgColor);
+                line2.setAttribute('stroke-width', '1');
+
+                svg.appendChild(line1);
+                svg.appendChild(line2);
+                container.appendChild(svg);
+            }
+        }
+
+        // Setup Background Color Preset Buttons logic
+        const bgButtons = document.querySelectorAll('.bg-btn');
+        bgButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                bgButtons.forEach(b => b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'ring-offset-black'));
+                const target = e.currentTarget;
+                target.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'ring-offset-black');
+
+                const bgColor = target.dataset.bg;
+                if (bgColor === 'transparent') {
+                    document.body.style.backgroundColor = '#000';
+                    document.body.style.backgroundImage = 'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYV2NkYGAwYkAD////R2XQIAxGE4lYAgA/3x0xQ+1tOAAAAABJRU5ErkJggg==")';
+                    if (viewer && viewer.renderer) {
+                        viewer.renderer.setClearColor(0x000000, 0); // Transparent WebGL background
+                    }
+                } else {
+                    document.body.style.backgroundImage = 'none';
+                    document.body.style.backgroundColor = bgColor;
+                    if (viewer && viewer.renderer) {
+                        const colorHex = parseInt(bgColor.replace('#', '0x'), 16);
+                        viewer.renderer.setClearColor(colorHex, 1); // Solid WebGL background
+                    }
+                }
+            });
+        });
+
+        // Setup Aspect Ratio Buttons logic
+        const aspectButtons = document.querySelectorAll('.aspect-btn');
+        const aspectSelect = document.getElementById('aspectSelect');
+        aspectButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                aspectButtons.forEach(b => b.classList.remove('active'));
+                const target = e.currentTarget;
+                target.classList.add('active');
+                aspectSelect.value = target.dataset.aspect;
+                updateCamera();
+            });
+        });
+
+        // Setup Grid Color Preset Buttons logic
+        const colorButtons = document.querySelectorAll('.grid-color-btn');
+        colorButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                colorButtons.forEach(b => b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'ring-offset-black'));
+                const target = e.currentTarget;
+                target.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'ring-offset-black');
+                document.getElementById('gridColor').value = target.dataset.color;
+                updateGrid();
+            });
+        });
+
+        // Setup Grid Overlay Buttons logic (Multi-select)
+        const gridButtons = document.querySelectorAll('.grid-btn');
+        gridButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const target = e.currentTarget;
+                const gridType = target.dataset.grid;
+
+                if (gridType === 'none') {
+                    // Turn everything else off if 'none' is clicked
+                    gridButtons.forEach(b => b.classList.remove('active'));
+                    target.classList.add('active');
+                } else {
+                    // Toggle current button
+                    target.classList.toggle('active');
+                    // Ensure 'none' is deactivated
+                    document.querySelector('.grid-btn[data-grid="none"]').classList.remove('active');
+
+                    // If nothing is selected, automatically revert to 'none'
+                    const anyActive = Array.from(gridButtons).some(b => b.dataset.grid !== 'none' && b.classList.contains('active'));
+                    if (!anyActive) {
+                        document.querySelector('.grid-btn[data-grid="none"]').classList.add('active');
+                    }
+                }
+                updateGrid();
+            });
+        });
+
+        ['focalRange', 'panRange', 'tiltRange', 'rollRange', 'shiftXRange', 'shiftYRange', 'distRange',
+            'focalInput', 'panInput', 'tiltInput', 'rollInput', 'shiftXInput', 'shiftYInput', 'distInput'
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', updateCamera);
+        });
+        window.addEventListener('resize', updateCamera);
+
+        // Drag and Drop File Upload
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('dropZone');
+
+            window.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('opacity-0', 'pointer-events-none');
+                dropZone.classList.add('opacity-100');
+            });
+
+            window.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                if (e.clientX === 0 || e.clientY === 0) {
+                    dropZone.classList.remove('opacity-100');
+                    dropZone.classList.add('opacity-0', 'pointer-events-none');
+                }
+            });
+
+            window.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('opacity-100');
+                dropZone.classList.add('opacity-0', 'pointer-events-none');
+
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    processFile(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        document.getElementById('fileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            processFile(file);
+        });
+
+        async function processFile(file) {
+            document.getElementById('loading').style.display = 'block';
+            const formData = new FormData();
+            formData.append('file', file);
+            const name = document.getElementById('customName').value;
+            if (name) formData.append('name', name);
+
+            try {
+                const response = await fetch('/generate', { method: 'POST', body: formData });
+                if (!response.ok) throw new Error('Server error');
+                const data = await response.json();
+                currentMetadata = data.metadata;
+                if (data.metadata) {
+                    if (data.metadata.width && data.metadata.height) {
+                        originalAspectRatio = data.metadata.width / data.metadata.height;
+                    } else if (data.metadata.aspect_ratio) {
+                        originalAspectRatio = data.metadata.aspect_ratio;
+                    }
+                    resetView();
+                }
+
+                const currentAlpha = parseInt(document.getElementById('alphaRange').value) || 20;
+                viewer.addSplatScene(data.ply_url, {
+                    'splatAlphaRemovalThreshold': currentAlpha,
+                    'showLoadingUI': true
+                }).then(() => {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('customName').value = '';
+                    loadHistory();
+                });
+            } catch (err) {
+                console.error(err);
+                alert('Generation failed');
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        init();
+
+        window.exportView = function () {
+            if (!viewer || !viewer.renderer || !viewer.camera) {
+                return;
+            }
+
+            if (typeof viewer.render === 'function') {
+                viewer.render();
+            }
+
+            const canvas = viewer.renderer.domElement;
+            const dataUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            const name = document.getElementById('customName').value || 'OpticSplat-capture';
+            link.download = `${name}-${new Date().getTime()}.png`;
+            link.href = dataUrl;
+            link.click();
+        };
+    </script>
+</body>
+
+</html>
