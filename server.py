@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -11,6 +13,7 @@ import shutil
 import uuid
 import logging
 import json
+import gc
 
 # Add ml-sharp/src to sys.path
 if getattr(sys, 'frozen', False):
@@ -23,8 +26,8 @@ if getattr(sys, 'frozen', False):
 else:
     # Running in normal development
     sys.path.append(str(Path("ml-sharp/src").absolute()))
-    BASE_DIR = Path(".")
-    STATIC_DIR = Path("static")
+    BASE_DIR = Path(__file__).parent.resolve()
+    STATIC_DIR = BASE_DIR / "static"
 
 from sharp.models import PredictorParams, create_predictor
 from sharp.utils import io
@@ -116,11 +119,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 DEFAULT_MODEL_URL = "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt"
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 
-# Global model state
-predictor = None
-
 def init_model():
-    global predictor
     LOGGER.info(f"Initializing model on device: {DEVICE}")
     # Force model cache to be local to the EXE directory to avoid cluttering user home dir
     model_cache = BASE_DIR / "model_cache"
@@ -133,30 +132,41 @@ def init_model():
         predictor.eval()
         predictor.to(DEVICE)
         LOGGER.info("Model initialized successfully.")
+        return predictor
     except Exception as e:
         LOGGER.error(f"Failed to initialize model: {e}")
         raise
 
 @app.on_event("startup")
 async def startup_event():
-    init_model()
+    import webbrowser
+    import threading
+    import time
+    
+    def open_browser():
+        time.sleep(1.5)  # Wait a moment for the server to fully start up and bind to port
+        print("\n[SERVER] Opening browser to http://127.0.0.1:8000...")
+        webbrowser.open("http://127.0.0.1:8000")
+        
+    threading.Thread(target=open_browser, daemon=True).start()
 
 @app.post("/generate")
 async def generate_3dgs(file: UploadFile = File(...), name: str = Form(None)):
     print(f"\n[SERVER] Received generation request for file: {file.filename}, custom name: {name}")
-    if not predictor:
-        print("[SERVER] Error: Model not initialized!")
-        raise HTTPException(status_code=500, detail="Model not initialized")
     
     # Save the uploaded file
     file_id = str(uuid.uuid4())
     input_ext = Path(file.filename).suffix
     input_path = UPLOAD_DIR / f"{file_id}{input_ext}"
     
+    # Ensure directories exist right before writing (in case they were deleted)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    
     print(f"[SERVER] Saving input to: {input_path}")
     with input_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
+        shutil.copyfileobj(file.file, buffer)    
+        
     try:
         # Load image for processing
         print(f"[SERVER] Loading image and extracting metadata...")
@@ -225,9 +235,20 @@ async def generate_3dgs(file: UploadFile = File(...), name: str = Form(None)):
             align_corners=True,
         )
 
+        print(f"[SERVER] Loading AI Model to {DEVICE}...")
+        predictor = init_model()
+
         print(f"[SERVER] Running AI Inference on {DEVICE} (SHARP)...")
         with torch.no_grad():
             gaussians_ndc = predictor(image_resized_pt, disparity_factor)
+            
+            # Unload model from memory
+            del predictor
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
 
             intrinsics = torch.tensor([
                 [f_px, 0, w / 2, 0],

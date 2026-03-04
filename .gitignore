@@ -1,0 +1,14 @@
+# Ignore uploaded images and generated 3D splat files
+/uploads/
+/output/
+
+# Ignore the downloaded PyTorch models
+/model_cache/
+
+# General Python cache/virtual environment ignores (Recommended)
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
