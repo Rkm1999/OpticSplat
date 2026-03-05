@@ -471,7 +471,7 @@
             </div>
             <div class="flex flex-col gap-1">
                 <label class="text-[10px] text-white/40 uppercase tracking-tighter">&nbsp;</label>
-                <input type="file" id="fileInput" class="hidden" accept=".ply,image/*">
+                <input type="file" id="fileInput" class="hidden" accept=".ply,image/*,video/*">
                 <button onclick="document.getElementById('fileInput').click()"
                     class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg font-medium transition shadow-lg shadow-blue-500/20 text-sm whitespace-nowrap">
                     Upload & Process
@@ -480,6 +480,26 @@
             <div id="loading" class="text-center text-sm animate-pulse text-blue-400 self-end mb-2 ml-2">
                 AI Processing...
             </div>
+        </div>
+    </div>
+
+    <div id="videoControls"
+        class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-xl border border-white/10 px-6 py-3 rounded-2xl z-30 flex items-center gap-4 hidden min-w-[400px]">
+        <button id="playPauseBtn" class="bg-blue-600 hover:bg-blue-500 w-10 h-10 rounded-full flex items-center justify-center transition shadow-lg shadow-blue-500/20">
+            <svg id="playIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <svg id="pauseIcon" class="hidden" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+        </button>
+        <div class="flex-grow flex flex-col gap-1">
+            <div class="flex justify-between text-[10px] text-white/40 uppercase font-bold tracking-widest">
+                <span>Timeline</span>
+                <span id="frameIndicator">0 / 0</span>
+            </div>
+            <input type="range" id="frameSlider" min="0" max="0" value="0" class="w-full accent-blue-500">
         </div>
     </div>
 
@@ -497,6 +517,12 @@
         let originalAspectRatio = 1;
         let currentMetadata = null;
         let isUpdatingFromSliders = false;
+
+        // Video Playback State
+        let isPlaying = false;
+        let videoPlaybackInterval = null;
+        let currentFrameIndex = 0;
+        let videoFrames = [];
 
         // Helper for grid colors with opacity
         function hexToRgba(hex, alpha) {
@@ -630,9 +656,41 @@
             }
         }
 
+        let frameCache = new Map();
+        let isFrameLoading = false;
+        let isPreloading = false;
+
         async function loadScene(url, metadata) {
-            console.log('Loading splat:', url, metadata);
+            console.log('Loading scene:', url);
+            
+            if (videoPlaybackInterval) {
+                clearInterval(videoPlaybackInterval);
+                videoPlaybackInterval = null;
+            }
+            isPlaying = false;
+            isPreloading = false;
+            updatePlayPauseUI();
+
+            if (splatMesh) {
+                scene.remove(splatMesh);
+                if (!Array.from(frameCache.values()).includes(splatMesh)) {
+                    splatMesh.dispose();
+                }
+                splatMesh = null;
+            }
+
+            for (let mesh of frameCache.values()) {
+                scene.remove(mesh);
+                mesh.dispose();
+            }
+            frameCache.clear();
+            
+            videoFrames = [];
+            currentFrameIndex = 0;
+            
             document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').innerText = 'AI Processing...';
+
             currentMetadata = metadata;
             if (metadata) {
                 if (metadata.width && metadata.height) {
@@ -642,31 +700,163 @@
                 } else {
                     originalAspectRatio = 1.0;
                 }
-
                 document.getElementById('resValue').innerText = metadata.width ? `${metadata.width}x${metadata.height}` : '---';
                 resetView();
             }
 
-            if (splatMesh) {
-                scene.remove(splatMesh);
-                splatMesh.dispose();
+            if (metadata && metadata.type === 'video' && metadata.ply_urls && metadata.ply_urls.length > 0) {
+                videoFrames = metadata.ply_urls;
+                document.getElementById('videoControls').classList.remove('hidden');
+                document.getElementById('frameSlider').max = videoFrames.length - 1;
+                document.getElementById('frameSlider').value = 0;
+                updateTimelineUI();
+                
+                await preLoadVideo(videoFrames);
+            } else {
+                document.getElementById('videoControls').classList.add('hidden');
+                await loadSplatFrame(url, false);
             }
-
-            const currentAlpha = parseInt(document.getElementById('alphaRange').value) || 20;
-
-            splatMesh = new SPARK.SplatMesh({ url: url });
-            scene.add(splatMesh);
-
-            splatMesh.onLoad = () => {
-                document.getElementById('loading').style.display = 'none';
-
-                // Set initial alpha threshold if supported
-                if (splatMesh.material && splatMesh.material.uniforms && splatMesh.material.uniforms.alphaThreshold) {
-                    splatMesh.material.uniforms.alphaThreshold.value = currentAlpha / 100;
-                }
-            };
         }
 
+        async function preLoadVideo(urls) {
+            isPreloading = true;
+            const loadingDiv = document.getElementById('loading');
+            loadingDiv.style.display = 'block';
+            
+            for (let i = 0; i < urls.length; i++) {
+                if (!isPreloading) break;
+                const url = urls[i];
+                loadingDiv.innerText = `Pre-loading: ${i + 1} / ${urls.length}`;
+                
+                const nextSplat = new SPARK.SplatMesh({ url: url });
+                scene.add(nextSplat);
+                nextSplat.visible = (i === 0);
+                
+                if (i === 0) splatMesh = nextSplat;
+
+                await new Promise((resolve) => {
+                    nextSplat.onLoad = () => {
+                        applyAlphaThreshold(nextSplat);
+                        frameCache.set(url, nextSplat);
+                        resolve();
+                    };
+                    setTimeout(resolve, 15000); // Fail-safe
+                });
+            }
+            
+            loadingDiv.style.display = 'none';
+            isPreloading = false;
+        }
+
+        async function loadSplatFrame(url, useCache = false) {
+            if (isFrameLoading && useCache) return;
+            
+            if (useCache && frameCache.has(url)) {
+                const cachedMesh = frameCache.get(url);
+                if (splatMesh !== cachedMesh) {
+                    if (splatMesh) splatMesh.visible = false;
+                    splatMesh = cachedMesh;
+                    splatMesh.visible = true;
+                    applyAlphaThreshold();
+                }
+                return;
+            }
+
+            isFrameLoading = true;
+            try {
+                const nextSplat = new SPARK.SplatMesh({ url: url });
+                scene.add(nextSplat);
+                
+                if (!useCache && splatMesh && splatMesh !== nextSplat) {
+                    scene.remove(splatMesh);
+                    if (!Array.from(frameCache.values()).includes(splatMesh)) {
+                        splatMesh.dispose();
+                    }
+                }
+
+                await new Promise((resolve) => {
+                    nextSplat.onLoad = () => {
+                        document.getElementById('loading').style.display = 'none';
+                        
+                        if (useCache && splatMesh && splatMesh !== nextSplat) {
+                            splatMesh.visible = false;
+                        }
+                        
+                        splatMesh = nextSplat;
+                        splatMesh.visible = true;
+                        applyAlphaThreshold();
+                        
+                        if (useCache) {
+                            frameCache.set(url, splatMesh);
+                        }
+                        resolve();
+                    };
+                    
+                    setTimeout(() => {
+                        if (nextSplat.onLoad) {
+                            console.warn('Load taking longer than expected:', url);
+                        }
+                        resolve(); 
+                    }, 15000);
+                });
+            } catch (err) {
+                console.error('Error loading splat frame:', err);
+            } finally {
+                isFrameLoading = false;
+            }
+        }
+
+        function applyAlphaThreshold(targetMesh) {
+            const mesh = targetMesh || splatMesh;
+            if (!mesh) return;
+            const currentAlpha = parseInt(document.getElementById('alphaRange').value) || 20;
+            if (mesh.material && mesh.material.uniforms && mesh.material.uniforms.alphaThreshold) {
+                mesh.material.uniforms.alphaThreshold.value = currentAlpha / 100;
+            }
+        }
+
+        function togglePlayback() {
+            if (videoFrames.length === 0) return;
+            isPlaying = !isPlaying;
+            updatePlayPauseUI();
+
+            if (isPlaying) {
+                videoPlaybackInterval = setInterval(async () => {
+                    currentFrameIndex = (currentFrameIndex + 1) % videoFrames.length;
+                    document.getElementById('frameSlider').value = currentFrameIndex;
+                    updateTimelineUI();
+                    
+                    await loadSplatFrame(videoFrames[currentFrameIndex], true);
+                }, 100);
+            } else {
+                clearInterval(videoPlaybackInterval);
+                videoPlaybackInterval = null;
+            }
+        }
+
+        function updatePlayPauseUI() {
+            const playIcon = document.getElementById('playIcon');
+            const pauseIcon = document.getElementById('pauseIcon');
+            if (isPlaying) {
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
+            } else {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+            }
+        }
+
+        function updateTimelineUI() {
+            document.getElementById('frameIndicator').innerText = `${currentFrameIndex + 1} / ${videoFrames.length}`;
+        }
+
+        document.getElementById('playPauseBtn').addEventListener('click', togglePlayback);
+        document.getElementById('frameSlider').addEventListener('input', async (e) => {
+            if (isPlaying) togglePlayback();
+            currentFrameIndex = parseInt(e.target.value);
+            updateTimelineUI();
+            await loadSplatFrame(videoFrames[currentFrameIndex], true);
+        });
         function resetView() {
             if (currentMetadata) {
                 const focal = Math.round(currentMetadata.focal_length_35mm || 35);
@@ -1092,7 +1282,10 @@
             processFile(file);
         });
 
-        async function processFile(file) {
+        async function processFile(files) {
+            if (!files || files.length === 0) return;
+            const file = files[0];
+
             document.getElementById('loading').style.display = 'block';
             const formData = new FormData();
             formData.append('file', file);

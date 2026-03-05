@@ -30,8 +30,9 @@ else:
     STATIC_DIR = BASE_DIR / "static"
 
 from sharp.models import PredictorParams, create_predictor
+from sharp.models.params import InitializerParams
 from sharp.utils import io
-from sharp.utils.gaussians import unproject_gaussians, save_ply as original_save_ply
+from sharp.utils.gaussians import unproject_gaussians, save_ply as original_save_ply, Gaussians3D
 
 # Compatible PLY saving
 def save_ply_standard(gaussians, f_px, image_shape, path):
@@ -102,14 +103,6 @@ LOGGER = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Add COOP and COEP headers for SharedArrayBuffer support
-@app.middleware("http")
-async def add_coop_coep_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
-    return response
-
 # Configuration
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "output"
@@ -119,15 +112,18 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 DEFAULT_MODEL_URL = "https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt"
 DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
 
-def init_model():
-    LOGGER.info(f"Initializing model on device: {DEVICE}")
+def init_model(stride=2):
+    LOGGER.info(f"Initializing model on device: {DEVICE} (stride={stride})")
     # Force model cache to be local to the EXE directory to avoid cluttering user home dir
     model_cache = BASE_DIR / "model_cache"
     model_cache.mkdir(exist_ok=True)
     os.environ["TORCH_HOME"] = str(model_cache)
     try:
         state_dict = torch.hub.load_state_dict_from_url(DEFAULT_MODEL_URL, progress=True)
-        predictor = create_predictor(PredictorParams())
+        params = PredictorParams()
+        params.initializer.stride = stride
+        params.gaussian_decoder.stride = stride
+        predictor = create_predictor(params)
         predictor.load_state_dict(state_dict)
         predictor.eval()
         predictor.to(DEVICE)
@@ -156,146 +152,166 @@ async def generate_3dgs(file: UploadFile = File(...), name: str = Form(None)):
     
     # Save the uploaded file
     file_id = str(uuid.uuid4())
-    input_ext = Path(file.filename).suffix
-    input_path = UPLOAD_DIR / f"{file_id}{input_ext}"
+    input_ext = Path(file.filename).suffix.lower()
     
-    # Ensure directories exist right before writing (in case they were deleted)
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Create a unique directory for this session in uploads
+    session_upload_dir = UPLOAD_DIR / file_id
+    session_upload_dir.mkdir(parents=True, exist_ok=True)
+    input_path = session_upload_dir / f"input{input_ext}"
+    
+    # Create a unique directory for this session in output
+    session_output_dir = OUTPUT_DIR / file_id
+    session_output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"[SERVER] Saving input to: {input_path}")
     with input_path.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)    
         
     try:
-        # Load image for processing
-        print(f"[SERVER] Loading image and extracting metadata...")
-        from PIL import Image, ExifTags
-        img_pil = Image.open(input_path)
-        width, height = img_pil.size
+        is_video = input_ext in [".mp4", ".mov", ".avi", ".mkv", ".webm"]
+        
+        if is_video:
+            print(f"[SERVER] Processing video file with enhanced extraction...")
+            import imageio
+            # Use ffmpeg plugin explicitly to avoid banding and ensure clean RGB24
+            reader = imageio.get_reader(input_path, format='FFMPEG', mode='I')
+            meta = reader.get_meta_data()
+            fps = meta.get('fps', 10)
+            
+            # Extract first frame for overall metadata
+            first_frame = reader.get_data(0)
+            height, width = first_frame.shape[:2]
+        else:
+            from PIL import Image, ExifTags
+            img_pil = Image.open(input_path)
+            width, height = img_pil.size
+            
         aspect_ratio = width / height
 
-        # Robust EXIF Extraction
+        # Robust EXIF Extraction (only for images)
         exif_data = {}
-        try:
-            raw_exif = img_pil._getexif()
-            if raw_exif:
-                for tag, value in raw_exif.items():
-                    decoded = ExifTags.TAGS.get(tag, tag)
-                    exif_data[decoded] = value
-        except Exception as e:
-            print(f"[SERVER] Metadata extraction warning: {e}")
-
-        # Determine Focal Length (35mm equivalent)
-        def to_float(val):
-            if val is None: return None
+        f_raw = None
+        f_35mm = None
+        if not is_video:
             try:
-                if isinstance(val, (int, float)): return float(val)
-                # Handle PIL's IFDRational or tuple (numerator, denominator)
-                if hasattr(val, 'numerator') and hasattr(val, 'denominator'):
-                    return float(val.numerator) / float(val.denominator)
-                if isinstance(val, tuple) and len(val) == 2:
-                    return float(val[0]) / float(val[1])
-                return float(val)
-            except:
-                return None
+                raw_exif = img_pil._getexif()
+                if raw_exif:
+                    for tag, value in raw_exif.items():
+                        decoded = ExifTags.TAGS.get(tag, tag)
+                        exif_data[decoded] = value
+            except Exception as e:
+                print(f"[SERVER] Metadata extraction warning: {e}")
 
-        f_raw = to_float(exif_data.get("FocalLength"))
-        f_35mm = to_float(exif_data.get("FocalLengthIn35mmFilm"))
+            def to_float(val):
+                if val is None: return None
+                try:
+                    if isinstance(val, (int, float)): return float(val)
+                    if hasattr(val, 'numerator') and hasattr(val, 'denominator'):
+                        return float(val.numerator) / float(val.denominator)
+                    if isinstance(val, tuple) and len(val) == 2:
+                        return float(val[0]) / float(val[1])
+                    return float(val)
+                except: return None
+
+            f_raw = to_float(exif_data.get("FocalLength"))
+            f_35mm = to_float(exif_data.get("FocalLengthIn35mmFilm"))
 
         if not f_35mm:
             if f_raw:
-                # If raw focal is small (< 15), it's likely a phone/drone sensor (approx 6-8x crop)
                 f_35mm = f_raw * 7.0 if f_raw < 15 else f_raw
             else:
                 f_35mm = 35.0 # Default
         
-        # Calculate Crop Factor
-        crop_factor = 1.0
-        if f_raw and f_35mm and f_raw > 0:
-            crop_factor = f_35mm / f_raw
+        print(f"[SERVER] Initial Metadata: Res={width}x{height}, Aspect={aspect_ratio:.2f}, Focal35={f_35mm}mm")
 
-        print(f"[SERVER] Metadata Found: Res={width}x{height}, Aspect={aspect_ratio:.2f}, Focal35={f_35mm}mm, Crop={crop_factor:.2f}x")
-
-        # Now pass to ml-sharp for AI processing
-        image, _, f_px = io.load_rgb(input_path)
-        # (We use ml-sharp's internal f_px for unprojection, but our f_35mm for UI)
+        # Load AI Model
+        stride = 2
+        print(f"[SERVER] Loading AI Model to {DEVICE} with stride {stride}...")
+        predictor = init_model(stride=stride)
         
-        # Run inference
         internal_shape = (1536, 1536)
-        print(f"[SERVER] Preprocessing image to {internal_shape}...")
-        image_pt = torch.from_numpy(image.copy()).float().to(DEVICE).permute(2, 0, 1) / 255.0
-        _, h, w = image_pt.shape
-        disparity_factor = torch.tensor([f_px / w]).float().to(DEVICE)
-
-        image_resized_pt = F.interpolate(
-            image_pt[None],
-            size=(internal_shape[1], internal_shape[0]),
-            mode="bilinear",
-            align_corners=True,
-        )
-
-        print(f"[SERVER] Loading AI Model to {DEVICE}...")
-        predictor = init_model()
-
-        print(f"[SERVER] Running AI Inference on {DEVICE} (SHARP)...")
-        with torch.no_grad():
-            gaussians_ndc = predictor(image_resized_pt, disparity_factor)
-            
-            # Unload model from memory
-            del predictor
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                torch.mps.empty_cache()
-
-            intrinsics = torch.tensor([
-                [f_px, 0, w / 2, 0],
-                [0, f_px, h / 2, 0],
-                [0, 0, 1, 0],
-                [0, 0, 0, 1],
-            ]).float().to(DEVICE)
-            
-            intrinsics_resized = intrinsics.clone()
-            intrinsics_resized[0] *= internal_shape[0] / w
-            intrinsics_resized[1] *= internal_shape[1] / h
-
-            print(f"[SERVER] Unprojecting Gaussians to metric space...")
-            gaussians = unproject_gaussians(
-                gaussians_ndc, torch.eye(4).to(DEVICE), intrinsics_resized, internal_shape
-            )
-
-        # Save PLY and Metadata
-        output_ply = OUTPUT_DIR / f"{file_id}.ply"
-        output_json = OUTPUT_DIR / f"{file_id}.json"
-        print(f"[SERVER] Saving compatible 3D Splat file (PLY) to: {output_ply}")
-        save_ply_standard(gaussians, f_px, (height, width), output_ply)
+        processed_plys = []
         
-        # Calculate f_35mm equivalent for the frontend simulator
-        diag_35mm = np.sqrt(36**2 + 24**2)
-        diag_px = np.sqrt(width**2 + height**2)
-        f_35mm = f_px * diag_35mm / diag_px
+        if is_video:
+            # Robust frame count
+            try:
+                num_frames = reader.get_length()
+                if num_frames == float('inf') or num_frames <= 0:
+                    num_frames = sum(1 for _ in reader)
+                    reader = imageio.get_reader(input_path, format='FFMPEG', mode='I')
+            except:
+                num_frames = 30
+                
+            max_frames = 30
+            step = max(1, num_frames // max_frames)
+            
+            print(f"[SERVER] Video length: {num_frames} frames. Processing up to {max_frames} (step={step})...")
+            
+            frame_idx_in_sequence = 0
+            for i, frame in enumerate(reader):
+                if frame_idx_in_sequence >= max_frames: break
+                if i % step != 0: continue
+                
+                print(f"[SERVER] Processing frame {i} (Index {frame_idx_in_sequence})...")
+                # Ensure frame is RGB and clean
+                if frame.shape[2] == 4: frame = frame[:,:,:3]
+                
+                # Save the extracted frame to uploads session folder for reference
+                frame_img_path = session_upload_dir / f"frame_{frame_idx_in_sequence:03d}.jpg"
+                import PIL.Image
+                PIL.Image.fromarray(frame).save(frame_img_path)
+                
+                # Predict with full splat count (decimate=1) to avoid banding artifacts
+                gaussians = process_single_frame(predictor, frame, internal_shape, decimate=1)
+                
+                # Save PLY to output session folder
+                frame_id = f"frame_{frame_idx_in_sequence:03d}"
+                output_ply = session_output_dir / f"{frame_id}.ply"
+                
+                f_px = (f_35mm * np.sqrt(width**2 + height**2)) / np.sqrt(36**2 + 24**2)
+                save_ply_standard(gaussians, f_px, (height, width), output_ply)
+                
+                # URL relative to the session folder
+                processed_plys.append(f"/output/{file_id}/{frame_id}.ply")
+                frame_idx_in_sequence += 1
+                
+            reader.close()
+        else:
+            # Single image process
+            image, _, f_px = io.load_rgb(input_path)
+            gaussians = process_single_frame(predictor, image, internal_shape)
+            
+            output_ply = session_output_dir / "model.ply"
+            save_ply_standard(gaussians, f_px, (height, width), output_ply)
+            processed_plys.append(f"/output/{file_id}/model.ply")
+
+        # Unload model
+        del predictor
+        gc.collect()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
 
         metadata = {
             "id": file_id,
+            "type": "video" if is_video else "image",
             "focal_length_35mm": float(f_35mm),
-            "focal_length_raw": float(f_raw) if f_raw else None,
-            "crop_factor": float(crop_factor),
             "width": width,
             "height": height,
             "aspect_ratio": width / height,
             "filename": name if name else file.filename,
-            "input_url": f"/uploads/{input_path.name}"
+            "input_url": f"/uploads/{file_id}/input{input_ext}",
+            "ply_urls": processed_plys,
+            "fps": fps if is_video else 0,
+            "session_id": file_id
         }
         
+        output_json = OUTPUT_DIR / f"{file_id}.json"
         with open(output_json, "w") as f:
             json.dump(metadata, f)
         
         print(f"[SERVER] SUCCESS: Generation complete for {file_id}\n")
         return {
             "id": file_id, 
-            "ply_url": f"/output/{file_id}.ply",
+            "ply_url": processed_plys[0], 
             "metadata": metadata
         }
         
@@ -305,9 +321,57 @@ async def generate_3dgs(file: UploadFile = File(...), name: str = Form(None)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/output/{filename}")
-async def get_output(filename: str):
-    file_path = OUTPUT_DIR / filename
+def process_single_frame(predictor, image_np, internal_shape, decimate=1):
+    """Helper to run predictor on a single numpy image frame."""
+    h_orig, w_orig = image_np.shape[:2]
+    
+    f_35mm = 35.0
+    f_px = (f_35mm * np.sqrt(w_orig**2 + h_orig**2)) / np.sqrt(36**2 + 24**2)
+    
+    image_pt = torch.from_numpy(image_np.copy()).float().to(DEVICE).permute(2, 0, 1) / 255.0
+    disparity_factor = torch.tensor([f_px / w_orig]).float().to(DEVICE)
+
+    image_resized_pt = F.interpolate(
+        image_pt[None],
+        size=(internal_shape[1], internal_shape[0]),
+        mode="bilinear",
+        align_corners=True,
+    )
+
+    with torch.no_grad():
+        gaussians_ndc = predictor(image_resized_pt, disparity_factor)
+        
+        intrinsics = torch.tensor([
+            [f_px, 0, w_orig / 2, 0],
+            [0, f_px, h_orig / 2, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ]).float().to(DEVICE)
+        
+        intrinsics_resized = intrinsics.clone()
+        intrinsics_resized[0] *= internal_shape[0] / w_orig
+        intrinsics_resized[1] *= internal_shape[1] / h_orig
+
+        gaussians = unproject_gaussians(
+            gaussians_ndc, torch.eye(4).to(DEVICE), intrinsics_resized, internal_shape
+        )
+        
+        # Apply decimation if requested
+        if decimate > 1:
+            gaussians = Gaussians3D(
+                mean_vectors=gaussians.mean_vectors[:, ::decimate, :],
+                singular_values=gaussians.singular_values[:, ::decimate, :],
+                quaternions=gaussians.quaternions[:, ::decimate, :],
+                colors=gaussians.colors[:, ::decimate, :],
+                opacities=gaussians.opacities[:, ::decimate]
+            )
+            print(f"[SERVER] Decimated Gaussians to {gaussians.mean_vectors.shape[1]} splats")
+            
+    return gaussians
+
+@app.get("/output/{file_id}/{filename}")
+async def get_output_file(file_id: str, filename: str):
+    file_path = OUTPUT_DIR / file_id / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(file_path)
@@ -316,53 +380,45 @@ async def get_output(filename: str):
 async def list_history():
     files = []
     if OUTPUT_DIR.exists():
-        for ply_file in OUTPUT_DIR.glob("*.ply"):
-            mtime = ply_file.stat().st_mtime
-            metadata = {}
-            json_file = ply_file.with_suffix(".json")
-            if json_file.exists():
-                try:
-                    with open(json_file, "r") as f:
-                        metadata = json.load(f)
-                except:
-                    pass
-            
-            files.append({
-                "id": ply_file.stem,
-                "ply_url": f"/output/{ply_file.name}",
-                "timestamp": mtime,
-                "metadata": metadata
-            })
+        # Each generation has a {file_id}.json in the root of OUTPUT_DIR
+        for json_file in OUTPUT_DIR.glob("*.json"):
+            mtime = json_file.stat().st_mtime
+            try:
+                with open(json_file, "r") as f:
+                    metadata = json.load(f)
+                
+                files.append({
+                    "id": json_file.stem,
+                    "ply_url": metadata.get("ply_urls", [f"/output/{json_file.stem}/model.ply"])[0],
+                    "timestamp": mtime,
+                    "metadata": metadata
+                })
+            except Exception as e:
+                print(f"[SERVER] Error loading metadata from {json_file}: {e}")
     
     files.sort(key=lambda x: x["timestamp"], reverse=True)
     return files
 
 @app.delete("/delete/{file_id}")
 async def delete_item(file_id: str):
-    print(f"[SERVER] Deleting item: {file_id}")
+    print(f"[SERVER] Deleting session: {file_id}")
     try:
         # Paths
-        ply_path = OUTPUT_DIR / f"{file_id}.ply"
+        session_upload_dir = UPLOAD_DIR / file_id
+        session_output_dir = OUTPUT_DIR / file_id
         json_path = OUTPUT_DIR / f"{file_id}.json"
         
-        # We need to find the upload file path from JSON metadata before deleting it
+        # Recursive delete
+        if session_upload_dir.exists():
+            shutil.rmtree(session_upload_dir)
+        if session_output_dir.exists():
+            shutil.rmtree(session_output_dir)
         if json_path.exists():
-            with open(json_path, "r") as f:
-                meta = json.load(f)
-                input_url = meta.get("input_url")
-                if input_url:
-                    upload_filename = input_url.split("/")[-1]
-                    upload_path = UPLOAD_DIR / upload_filename
-                    if upload_path.exists():
-                        os.remove(upload_path)
-        
-        # Delete PLY and JSON
-        if ply_path.exists(): os.remove(ply_path)
-        if json_path.exists(): os.remove(json_path)
+            os.remove(json_path)
         
         return {"status": "success"}
     except Exception as e:
-        print(f"[SERVER] Error deleting: {e}")
+        print(f"[SERVER] Error deleting session {file_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Serve the frontend
