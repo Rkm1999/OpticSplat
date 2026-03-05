@@ -9,9 +9,9 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-                "gaussian-splats-3d": "https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.0/build/gaussian-splats-3d.module.js"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/",
+                "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.10/spark.module.js"
             }
         }
     </script>
@@ -86,7 +86,7 @@
             z-index: 5;
         }
 
-        .gallery-item:hover .delete-btn {
+        .gallery-item:hover.delete-btn {
             opacity: 1;
         }
 
@@ -195,9 +195,8 @@
         <div id="grid-container"></div>
     </div>
 
-    <!-- Drag and Drop Overlay -->
     <div id="dropZone"
-        class="fixed inset-0 z-[100] bg-blue-500/20 backdrop-blur-sm border-4 border-blue-500 border-dashed m-6 rounded-3xl flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+        class="fixed inset-0 z- bg-blue-500/20 backdrop-blur-sm border-4 border-blue-500 border-dashed m-6 rounded-3xl flex items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
         <div
             class="text-3xl font-bold text-white drop-shadow-xl bg-black/50 px-8 py-4 rounded-2xl flex items-center gap-4">
             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
@@ -206,24 +205,20 @@
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
-            Drop .PLY or Image here
+            Drop.PLY or Image here
         </div>
     </div>
 
-    <!-- Gallery Sidebar -->
     <div id="gallery"
         class="fixed left-0 top-0 bottom-0 w-48 bg-black/80 backdrop-blur-xl border-r border-white/10 p-4 overflow-y-auto z-20 flex flex-col gap-4">
         <h2 class="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">History</h2>
         <div id="historyList" class="flex flex-col gap-4">
-            <!-- Items populated by JS -->
         </div>
     </div>
 
-    <!-- Right Settings Sidebar -->
     <div id="settings-sidebar"
         class="fixed right-0 top-0 bottom-0 w-[360px] bg-black/80 backdrop-blur-xl border-l border-white/10 p-6 overflow-y-auto z-20 flex flex-col gap-6 pointer-events-auto text-sm">
 
-        <!-- Lens Control -->
         <div class="space-y-4">
             <div class="flex justify-between items-center text-sm">
                 <label>Focal Length</label>
@@ -235,7 +230,6 @@
             </div>
             <input type="range" id="focalRange" min="8" max="400" value="35" class="w-full accent-blue-500">
 
-            <!-- Sharpness/Alpha Slider -->
             <div class="space-y-1">
                 <label class="text-[10px] text-white/40 uppercase">Sharpness (Alpha Threshold)</label>
                 <div class="flex items-center gap-2">
@@ -246,13 +240,11 @@
                 </div>
             </div>
 
-            <!-- Aspect Boxes -->
             <div class="space-y-2 pt-2">
                 <label class="text-[10px] text-white/40 uppercase">Aspect Ratio</label>
                 <div class="flex flex-wrap gap-2 items-end">
                     <button data-aspect="auto" class="aspect-btn active"
                         style="width: 36px; height: 36px; border-style: dashed;" title="Original">ORG</button>
-                    <!-- Landscape -->
                     <button data-aspect="1.777" class="aspect-btn" style="width: 36px; height: 20px;"
                         title="16:9">16:9</button>
                     <button data-aspect="1.5" class="aspect-btn" style="width: 36px; height: 24px;"
@@ -261,10 +253,8 @@
                         title="4:3">4:3</button>
                     <button data-aspect="1.25" class="aspect-btn" style="width: 36px; height: 29px;"
                         title="5:4">5:4</button>
-                    <!-- Square -->
                     <button data-aspect="1" class="aspect-btn" style="width: 32px; height: 32px;"
                         title="1:1">1:1</button>
-                    <!-- Portrait -->
                     <button data-aspect="0.8" class="aspect-btn aspect-btn-narrow" style="width: 29px; height: 36px;"
                         title="4:5"><span>4:5</span></button>
                     <button data-aspect="0.75" class="aspect-btn aspect-btn-narrow" style="width: 27px; height: 36px;"
@@ -277,7 +267,6 @@
                 <input type="hidden" id="aspectSelect" value="auto">
             </div>
 
-            <!-- Grid overlay buttons -->
             <div class="space-y-2 pt-2">
                 <div class="flex justify-between items-center">
                     <label class="text-[10px] text-white/40 uppercase">Grid Overlay</label>
@@ -345,7 +334,6 @@
             </div>
         </div>
 
-        <!-- Environment -->
         <div class="space-y-4 border-t border-white/10 pt-6">
             <div class="flex justify-between items-center text-sm">
                 <label>Environment</label>
@@ -363,15 +351,13 @@
                         style="background-color: #00ff00;" title="Green Screen"></button>
                     <button class="bg-btn w-6 h-6 rounded-full border border-white/20 relative overflow-hidden"
                         data-bg="transparent" title="Transparent Background">
-                        <div
-                            class="absolute inset-0 bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYV2NkYGAwYkAD////R2XQIAxGE4lYAgA/3x0xQ+1tOAAAAABJRU5ErkJggg==')]">
+                        <div class="absolute inset-0 bg-">
                         </div>
                     </button>
                 </div>
             </div>
         </div>
 
-        <!-- Camera Angle Control -->
         <div class="space-y-4 border-t border-white/10 pt-6">
             <div class="flex justify-between text-sm items-center">
                 <div class="flex items-center gap-3">
@@ -454,7 +440,6 @@
             </div>
         </div>
 
-        <!-- Scene Info -->
         <div class="flex justify-between items-center border-t border-white/10 pt-6">
             <div>
                 <div class="text-xs text-white/40 uppercase tracking-widest">Resolution</div>
@@ -463,7 +448,6 @@
         </div>
     </div>
 
-    <!-- Top Overlay (Export / Upload) -->
     <div
         class="fixed top-0 left-0 w-full pointer-events-none z-10 p-6 pl-[216px] pr-[384px] flex justify-between items-start">
         <div class="bg-black/50 backdrop-blur-md p-4 rounded-xl border border-white/10 pointer-events-auto shadow-2xl">
@@ -501,9 +485,14 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import * as GaussianSplats3D from 'gaussian-splats-3d';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import * as SPARK from '@sparkjsdev/spark';
 
-        let viewer;
+        let scene;
+        let renderer;
+        let sparkRenderer;
+        let controls;
+        let splatMesh;
         let camera;
         let originalAspectRatio = 1;
         let currentMetadata = null;
@@ -521,43 +510,52 @@
         async function init() {
             loadHistory();
 
-            viewer = new GaussianSplats3D.Viewer({
-                'cameraUp': [0, -1, 0],
-                'initialCameraPosition': [0, 0, 0],
-                'initialCameraLookAt': [0, 0, 0],
-                'rootElement': document.getElementById('canvas-container'),
-                'sphericalHarmonicsDegree': 2,
-                'selfRenderMode': true,
-                'rendererConfig': { preserveDrawingBuffer: true, alpha: true }
+            const container = document.getElementById('canvas-container');
+
+            renderer = new THREE.WebGLRenderer({
+                antialias: false,
+                preserveDrawingBuffer: true,
+                alpha: true
+            });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 0, 5);
+            camera.up.set(0, -1, 0);
+
+            scene.add(camera);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            // Initialize SparkRenderer
+            sparkRenderer = new SPARK.SparkRenderer({
+                renderer: renderer
             });
 
-            viewer.init();
-            viewer.start();
+            camera.add(sparkRenderer);
 
-            // Wait until components are truly ready
-            const checkReady = setInterval(() => {
-                if (viewer.renderer && viewer.camera && viewer.controls) {
-                    clearInterval(checkReady);
-                    console.log('Viewer ready.');
+            renderer.setClearColor(0x000000, 1);
 
-                    camera = viewer.camera;
-                    // Ensure renderer handles transparent background correctly right at start
-                    viewer.renderer.setClearColor(0x000000, 1);
-
-                    viewer.controls.addEventListener('change', () => {
-                        if (!isUpdatingFromSliders) {
-                            syncSlidersFromCamera();
-                        }
-                    });
-
-                    updateCamera();
+            controls.addEventListener('change', () => {
+                if (!isUpdatingFromSliders) {
+                    syncSlidersFromCamera();
                 }
-            }, 50);
+            });
 
-            window.addEventListener('keydown', (e) => {
-                e.stopImmediatePropagation();
-            }, true);
+            renderer.setAnimationLoop(() => {
+                controls.update();
+                if (sparkRenderer) {
+                    sparkRenderer.update({ scene, camera });
+                }
+                renderer.render(scene, camera);
+            });
 
+            updateCamera();
             setupDragAndDrop();
         }
 
@@ -568,9 +566,9 @@
                 document.getElementById('alphaRange').value = val;
                 document.getElementById('alphaInput').value = val;
 
-                if (viewer && viewer.splatMesh && viewer.splatMesh.material) {
-                    if (viewer.splatMesh.material.uniforms && viewer.splatMesh.material.uniforms.alphaRemovalThreshold) {
-                        viewer.splatMesh.material.uniforms.alphaRemovalThreshold.value = val;
+                if (splatMesh && splatMesh.material) {
+                    if (splatMesh.material.uniforms && splatMesh.material.uniforms.alphaThreshold) {
+                        splatMesh.material.uniforms.alphaThreshold.value = val / 100;
                     }
                 }
             });
@@ -632,7 +630,7 @@
             }
         }
 
-        function loadScene(url, metadata) {
+        async function loadScene(url, metadata) {
             console.log('Loading splat:', url, metadata);
             document.getElementById('loading').style.display = 'block';
             currentMetadata = metadata;
@@ -649,14 +647,24 @@
                 resetView();
             }
 
+            if (splatMesh) {
+                scene.remove(splatMesh);
+                splatMesh.dispose();
+            }
+
             const currentAlpha = parseInt(document.getElementById('alphaRange').value) || 20;
 
-            viewer.addSplatScene(url, {
-                'splatAlphaRemovalThreshold': currentAlpha,
-                'showLoadingUI': true
-            }).then(() => {
+            splatMesh = new SPARK.SplatMesh({ url: url });
+            scene.add(splatMesh);
+
+            splatMesh.onLoad = () => {
                 document.getElementById('loading').style.display = 'none';
-            });
+
+                // Set initial alpha threshold if supported
+                if (splatMesh.material && splatMesh.material.uniforms && splatMesh.material.uniforms.alphaThreshold) {
+                    splatMesh.material.uniforms.alphaThreshold.value = currentAlpha / 100;
+                }
+            };
         }
 
         function resetView() {
@@ -709,24 +717,22 @@
         document.getElementById('resetButton').addEventListener('click', resetView);
 
         function syncSlidersFromCamera() {
-            if (!viewer || !viewer.controls) return;
-            const controls = viewer.controls;
-            const cam = viewer.camera;
+            if (!controls || !camera) return;
 
-            const viewDir = new THREE.Vector3().subVectors(controls.target, cam.position).normalize();
+            const viewDir = new THREE.Vector3().subVectors(controls.target, camera.position).normalize();
 
             let distToZeroPlane = 0;
             if (Math.abs(viewDir.z) > 0.0001) {
-                distToZeroPlane = -cam.position.z / viewDir.z;
+                distToZeroPlane = -camera.position.z / viewDir.z;
             } else {
-                distToZeroPlane = cam.position.distanceTo(controls.target);
+                distToZeroPlane = camera.position.distanceTo(controls.target);
             }
 
             document.getElementById('distRange').value = distToZeroPlane.toFixed(2);
             document.getElementById('distInput').value = distToZeroPlane.toFixed(2);
 
-            const shiftX = cam.position.x + distToZeroPlane * viewDir.x;
-            const shiftY = cam.position.y + distToZeroPlane * viewDir.y;
+            const shiftX = camera.position.x + distToZeroPlane * viewDir.x;
+            const shiftY = camera.position.y + distToZeroPlane * viewDir.y;
             document.getElementById('shiftXRange').value = shiftX.toFixed(2);
             document.getElementById('shiftXInput').value = shiftX.toFixed(2);
             document.getElementById('shiftYRange').value = (-shiftY).toFixed(2);
@@ -751,7 +757,7 @@
         }
 
         function updateCamera(e) {
-            if (e && e.target) {
+            if (e && e.target && e.target.id) {
                 const targetId = e.target.id;
                 if (targetId.endsWith('Range')) {
                     const baseId = targetId.replace('Range', '');
@@ -764,12 +770,11 @@
                 }
             }
 
-            if (!viewer || !viewer.camera || !viewer.controls) return;
+            if (!camera || !controls) return;
 
             isUpdatingFromSliders = true;
 
-            const activeCamera = viewer.camera;
-            const controls = viewer.controls;
+            const activeCamera = camera;
 
             activeCamera.near = 0.001;
 
@@ -778,31 +783,23 @@
             const mm = document.getElementById('focalRange').value;
 
             // Emulate a physical 35mm full-frame camera (36mm x 24mm sensor).
-            // This allows rotating the camera and revealing unrendered space if the target aspect
-            // falls outside the original image's bounds.
             let sensorWidth = 36;
             let sensorHeight = 24;
 
             if (targetAspect >= 1.0) {
-                // Landscape orientation (Base: 36x24)
-                if (targetAspect > 1.5) { // 36/24 = 1.5
-                    // Wider than 3:2 (e.g., 16:9), crop top/bottom
+                if (targetAspect > 1.5) {
                     sensorWidth = 36;
                     sensorHeight = 36 / targetAspect;
                 } else {
-                    // Taller than 3:2 (e.g., 4:3), crop sides
                     sensorHeight = 24;
                     sensorWidth = 24 * targetAspect;
                 }
             } else {
-                // Portrait orientation (Base: 24x36) - Camera is physically rotated 90 degrees
-                const portraitAspect = 24 / 36; // ~0.666
+                const portraitAspect = 24 / 36;
                 if (targetAspect < portraitAspect) {
-                    // Taller/narrower than 2:3 (e.g., 9:16), crop sides
                     sensorHeight = 36;
                     sensorWidth = 36 * targetAspect;
                 } else {
-                    // Wider/shorter than 2:3 (e.g., 4:5), crop top/bottom
                     sensorWidth = 24;
                     sensorHeight = 24 / targetAspect;
                 }
@@ -843,27 +840,25 @@
             document.getElementById('angleValue').innerText = `${panDisp}° / ${tiltDisp}° / ${rollDisp}°`;
             document.getElementById('shiftValue').innerText = `${shiftX.toFixed(1)}, ${shiftY.toFixed(1)} | ${dist.toFixed(1)}m`;
 
+            activeCamera.aspect = targetAspect;
             activeCamera.updateProjectionMatrix();
 
             const container = document.getElementById('canvas-container');
 
             const topMargin = 100;
             const bottomMargin = 24;
-            const leftMargin = 216; // 192px (gallery sidebar) + 24px padding
-            const rightMargin = 384; // 360px (settings sidebar) + 24px padding
+            const leftMargin = 216;
+            const rightMargin = 384;
 
             const safeW = Math.max(200, window.innerWidth - leftMargin - rightMargin);
             const safeH = Math.max(200, window.innerHeight - topMargin - bottomMargin);
             const safeAspect = safeW / safeH;
 
-            // Decouple DOM scaling from internal FOV millimeter math so viewport maximizes to fill the screen
             let finalW, finalH;
             if (targetAspect > safeAspect) {
-                // Bounds constrained by safe width
                 finalW = safeW;
                 finalH = safeW / targetAspect;
             } else {
-                // Bounds constrained by safe height
                 finalH = safeH;
                 finalW = safeH * targetAspect;
             }
@@ -874,7 +869,9 @@
             container.style.top = (topMargin + (safeH / 2)) + 'px';
             container.style.transform = 'translate(-50%, -50%)';
 
-            if (viewer.resize) viewer.resize();
+            if (renderer) {
+                renderer.setSize(finalW, finalH);
+            }
             updateGrid();
             isUpdatingFromSliders = false;
         }
@@ -988,15 +985,15 @@
                 if (bgColor === 'transparent') {
                     document.body.style.backgroundColor = '#000';
                     document.body.style.backgroundImage = 'url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAHElEQVQYV2NkYGAwYkAD////R2XQIAxGE4lYAgA/3x0xQ+1tOAAAAABJRU5ErkJggg==")';
-                    if (viewer && viewer.renderer) {
-                        viewer.renderer.setClearColor(0x000000, 0); // Transparent WebGL background
+                    if (renderer) {
+                        renderer.setClearColor(0x000000, 0); // Transparent WebGL background
                     }
                 } else {
                     document.body.style.backgroundImage = 'none';
                     document.body.style.backgroundColor = bgColor;
-                    if (viewer && viewer.renderer) {
+                    if (renderer) {
                         const colorHex = parseInt(bgColor.replace('#', '0x'), 16);
-                        viewer.renderer.setClearColor(colorHex, 1); // Solid WebGL background
+                        renderer.setClearColor(colorHex, 1); // Solid WebGL background
                     }
                 }
             });
@@ -1054,9 +1051,7 @@
             });
         });
 
-        ['focalRange', 'panRange', 'tiltRange', 'rollRange', 'shiftXRange', 'shiftYRange', 'distRange',
-            'focalInput', 'panInput', 'tiltInput', 'rollInput', 'shiftXInput', 'shiftYInput', 'distInput'
-        ].forEach(id => {
+        ['focalRange', 'focalInput', 'panRange', 'panInput', 'tiltRange', 'tiltInput', 'rollRange', 'rollInput', 'shiftXRange', 'shiftXInput', 'shiftYRange', 'shiftYInput', 'distRange', 'distInput', 'aspectSelect'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('input', updateCamera);
         });
@@ -1086,13 +1081,13 @@
                 dropZone.classList.add('opacity-0', 'pointer-events-none');
 
                 if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                    processFile(e.dataTransfer.files[0]);
+                    processFile(e.dataTransfer.files);
                 }
             });
         }
 
         document.getElementById('fileInput').addEventListener('change', async (e) => {
-            const file = e.target.files[0];
+            const file = e.target.files;
             if (!file) return;
             processFile(file);
         });
@@ -1118,15 +1113,7 @@
                     resetView();
                 }
 
-                const currentAlpha = parseInt(document.getElementById('alphaRange').value) || 20;
-                viewer.addSplatScene(data.ply_url, {
-                    'splatAlphaRemovalThreshold': currentAlpha,
-                    'showLoadingUI': true
-                }).then(() => {
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('customName').value = '';
-                    loadHistory();
-                });
+                loadScene(data.ply_url, data.metadata);
             } catch (err) {
                 console.error(err);
                 alert('Generation failed');
@@ -1137,15 +1124,13 @@
         init();
 
         window.exportView = function () {
-            if (!viewer || !viewer.renderer || !viewer.camera) {
+            if (!renderer || !camera) {
                 return;
             }
 
-            if (typeof viewer.render === 'function') {
-                viewer.render();
-            }
+            renderer.render(scene, camera);
 
-            const canvas = viewer.renderer.domElement;
+            const canvas = renderer.domElement;
             const dataUrl = canvas.toDataURL('image/png');
             const link = document.createElement('a');
             const name = document.getElementById('customName').value || 'OpticSplat-capture';
@@ -1154,6 +1139,7 @@
             link.click();
         };
     </script>
+
 </body>
 
 </html>
