@@ -1,14 +1,53 @@
-# Ignore uploaded images and generated 3D splat files
-/uploads/
-/output/
+# === Unity (OpticSplatClient) ===
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Aa]ssets/GaussianAssets/Downloads/
+MemoryCaptures/
+Recording/
 
-# Ignore the downloaded PyTorch models
-/model_cache/
+# Ignore all Gaussian Splat PLY files and their metadata
+*.ply
+*.ply.meta
+# Generated assets
+/[Aa]ssets/GaussianAssets/*.asset
 
-# General Python cache/virtual environment ignores (Recommended)
-__pycache__/
+# Visual Studio / Rider generated files
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.opendb
+*.VC.db
+AssetImportWorker*
+
+# === Python / Backend ===
+backend/uploads/
+backend/output/
+backend/model_cache/
+backend/build_env/
+backend/dist/
+backend/build/
+backend/__pycache__/
+backend/*.spec
+backend/.venv/
+backend/venv/
+backend/env/
 *.py[cod]
 *$py.class
-.venv/
-venv/
-env/
+
+# === OS Specific ===
+.DS_Store
+Thumbs.db
+desktop.ini

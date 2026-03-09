@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+pillow
+pillow-heif
+timm
+plyfile
+imageio
+imageio-ffmpeg
+scipy
+torchvision
+gsplat
